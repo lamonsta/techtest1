@@ -1,45 +1,55 @@
-resource "aws_ecs_cluster" "ecs-cluster" {
-    name = "cluster1"
+resource "aws_ecs_cluster" "main" {
+    name = "ecscluster1"
+}
+
+resource "aws_autoscaling_group" "ecs-cluster" {
+    availability_zones = ["${var.availability_zone}"]
+    name = "ECS ${var.ecs_cluster_name}"
+    min_size = "${var.autoscale_min}"
+    max_size = "${var.autoscale_max}"
+    desired_capacity = "${var.autoscale_desired}"
+    health_check_type = "EC2"
+    launch_configuration = "${aws_launch_configuration.ecs.name}"
+    vpc_zone_identifier = ["${aws_subnet.main.id}"]
+}
+
+resource "aws_launch_configuration" "ecs" {
+    name = "ECS ${var.ecs_cluster_name}"
+    image_id = "${lookup(var.amis, var.region)}"
+    instance_type = "${var.instance_type}"
+    security_groups = ["${aws_security_group.ecs.id}"]
+    iam_instance_profile = "${aws_iam_instance_profile.ecs.name}"
+    # TODO: is there a good way to make the key configurable sanely?
+    key_name = "${aws_key_pair.alex.key_name}"
+    associate_public_ip_address = true
+    user_data = "#!/bin/bash\necho ECS_CLUSTER='${var.ecs_cluster_name}' > /etc/ecs/ecs.config"
 }
 
 
-data "aws_ecs_task_definition" "wordpress" {
-  task_definition = "${aws_ecs_task_definition.wordpress.family}"
+resource "aws_iam_role" "ecs_host_role" {
+    name = "ecs_host_role"
+    assume_role_policy = "${file("policies/ecs-role.json")}"
 }
 
-resource "aws_ecs_task_definition" "wordpress" {
-    family                = "hello_world"
-    container_definitions = <<DEFINITION
-[
-  {
-    "name": "wordpress",
-    "links": [
-      "mysql"
-    ],
-    "image": "wordpress",
-    "essential": true,
-    "portMappings": [
-      {
-        "containerPort": 80,
-        "hostPort": 80
-      }
-    ],
-    "memory": 500,
-    "cpu": 10
-  },
-  {
-    "environment": [
-      {
-        "name": "MYSQL_ROOT_PASSWORD",
-        "value": "password"
-      }
-    ],
-    "name": "mysql",
-    "image": "mysql",
-    "cpu": 10,
-    "memory": 500,
-    "essential": true
-  }
-]
-DEFINITION
+resource "aws_iam_role_policy" "ecs_instance_role_policy" {
+    name = "ecs_instance_role_policy"
+    policy = "${file("policies/ecs-instance-role-policy.json")}"
+    role = "${aws_iam_role.ecs_host_role.id}"
+}
+
+resource "aws_iam_role" "ecs_service_role" {
+    name = "ecs_service_role"
+    assume_role_policy = "${file("policies/ecs-role.json")}"
+}
+
+resource "aws_iam_role_policy" "ecs_service_role_policy" {
+    name = "ecs_service_role_policy"
+    policy = "${file("policies/ecs-service-role-policy.json")}"
+    role = "${aws_iam_role.ecs_service_role.id}"
+}
+
+resource "aws_iam_instance_profile" "ecs" {
+    name = "ecs-instance-profile"
+    path = "/"
+    roles = ["${aws_iam_role.ecs_host_role.name}"]
 }

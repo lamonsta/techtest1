@@ -11,3 +11,12 @@ resource "aws_lb" "lf-alb-1" {
     Environment = "Tech Test ALB Private Subbets 1 and 2"
   }
 }
+
+
+resource "aws_route53_record" "cname_route53_record" {
+  zone_id = "${aws_route53_zone.primary.zone_id}" # Replace with your zone ID
+  name    = "techtest.somedomain.com" # Replace with your name/domain/subdomain
+  type    = "CNAME"
+  ttl     = "60"
+  records = ["${aws_lb.lf-alb-1.dns_name}"]
+}
